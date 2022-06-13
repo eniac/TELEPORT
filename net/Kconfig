@@ -1,0 +1,220 @@
+menu "Networking"
+
+config LWIP
+	tristate "lwip TCP/IP layer"
+	---help---
+	  lwip TCP/IP layer.
+
+if INFINIBAND
+
+config FIT
+	bool "FIT IB layer"
+	default y
+	depends on INFINIBAND
+
+config FIT_FIRST_QPN
+	int "The first QPN"
+	range 80 100
+	default 80
+
+config FIT_MAX_RPC_TIMEOUT_SEC
+	int "Max send_reply timeout in seconds"
+	range 1 300
+	default 60
+	help
+	  Internally, LITE will do polling for outstanding RPC.
+	  This is the maximum time in seconds that LITE will give up polling
+	  and return.
+
+config FIT_NR_QPS_PER_PAIR
+	int "Numer of QPs between each node pair"
+	range 4 24
+	default 12
+	help
+	  We have this parameter because of FIT's internal design.
+	  For each pair of nodes, FIT will establish this number of QPs.
+	  For each message transfer, QP will be selected in a RR fashion.
+
+	  In old NIC, if you have a lot QPs, chances are, you will have QP thrashing.
+	  But according to recent study, this is not the case for new NIC, i.e. connectx-4, connectx-5.
+
+	  The default setting 12, just a heuristic number.
+	  The upper limit is heuristic.
+
+	  If unsure, use default.
+
+config FIT_NR_RECVCQ_POLLING_THREADS
+	int "Number of FIT recv_cq polling threads"
+	range 1 4
+	default 1
+	help
+	  We have this parameter because of FIT's internal design.
+	  At each node, FIT create this number of recv_cq, and these recv_cq
+	  will be shared by all the QPs (configured by FIT_NR_QPS_PER_PAIR).
+
+	  Usuallly, the number of QPs is larger than number of recv_cqs.
+	  It means recv_cq is shared by multiple QPs.
+
+	  Each recv_cq has its dedicated polling threads.
+	  Thus the more recv_cq you have, the more CPUs are needed for polling.
+	  Not a good model, in my opinion.
+
+	  If you have multi-threaded applications running, I suggest you have this
+	  number > 1. Otherwise, both throughput and latency will be limited by
+	  one single polling thread.
+
+	  If unsure, use default.
+
+
+config FIT_MAX_OUTSTANDING_SEND
+	int "max_send_wr"
+	range 1 24
+	default 24  if COMP_PROCESSOR
+	default 24 if COMP_MEMORY
+	depends on FIT
+	help
+	  This determines the maximum number of concurrent outstanding
+	  reply SEND (reply is also a SEND).
+
+	  If unsure, follow default.
+
+config FIT_BATCH_POLL_SEND_CQ
+	bool "Poll the send_cq in a batch fashion"
+	default n
+	depends on FIT
+	help
+	  Once enabled, FIT layer will not wait for ACK when
+	  replying a message to sender, and will return to caller immediately.
+	  This means, when the call returns, the reply buffer is not actually
+	  sent out. Thus, the reply buffer has to be there for a certain amount of time.
+	  But we have the ring buffer, so it is been taken care of.
+
+	  This essentially is just converting poll to batch poll.
+
+	  In our testing, this improves ~600ns for fit_ack_reply_callback().
+
+	  If unsure, say Y.
+
+config FIT_DEBUG
+	bool "Enable fit_debug"
+	default n
+	depends on FIT
+	help
+	  Enable to enable fit_debug() marco
+
+config FIT_SEQUENTIAL_IBAPI
+	bool "Make ibapi sequentially executed"
+	default n
+	depends on FIT
+	depends on DEBUG_KERNEL
+	help
+	  This option will make ibapi_send_reply() sequentially executed.
+	  This is achieved by adding a lock to protec the function.
+
+	  If unsure say N.
+
+config FIT_INITIAL_SLEEP_TIMEOUT
+	int "FIT initial sleep timeout (s) for connection"
+	default 10
+	depends on FIT
+	help
+	  This is the time you need to wait for FIT to establish
+	  connection with other machines. Life is short, make it smaller.
+
+config FIT_NR_NODES
+	int "FIT Number of Connected Nodes"
+	default 2
+	depends on FIT
+	help
+	  This is the number of nodes that can be connected by FIT layer.
+	  Count the nodes you need for testing, and then set the EXACT same
+	  value for all the testing nodes.
+
+	  E.g., if you are going to use 4 nodes, then config it as 4.
+
+config FIT_LOCAL_ID
+	int "FIT Unique Local ID [0, FIT_NR_NODES)"
+	depends on FIT || FIT_NR_NODES
+	help
+	  This is the local node id, which has to be unique across connected FIT nodes.
+	  The raneg of FIT_LOCAL_ID is [0, FIT_NR_NODES - 1).
+
+config SAME_MACHINE_VMS 
+	bool "Enable multiple VMs on the same physical machine"
+	default n
+	depends on FIT
+
+config SOCKET_O_IB
+	bool "IB support of Socket"
+	default n
+	depends on FIT
+	help
+	  Enable if you want to have socket APIs built over Infiniband.
+	  You must enable this on ALL nodes if you want the cluster to support socket.
+
+	  If unsure, say N.
+
+config SOCKET_SYSCALL
+	bool "Socket SYSCALL Support"
+	default y if COMP_PROCESSOR
+	default n if COMP_MEMORY
+	depends on SOCKET_O_IB
+	help
+	  Enable if you need socket SYSCALL on the node. Only processor component
+	  can enable this config since that is the only one will run user program.
+
+	  You must enable this if you want to use socket syscall.
+
+	  If unsure, say N.
+
+config SOCKET_SERVER
+	bool "socket server test code"
+	default n
+	depends on SOCKET_SYSCALL
+	help
+	  Enable to test socket server during boot.
+
+	  If unsure, say N.
+
+config SOCKET_CLIENT
+	bool "socket server test code"
+	default n
+	depends on SOCKET_SYSCALL
+	help
+	  Enable to test socket client during boot.
+
+	  If unsure, say N.
+
+config DEBUG_SOCKET
+	bool "debugging socket system call"
+	default n
+	depends on SOCKET_SYSCALL
+	help
+	  Turn on to show socket syscall implementation debugging msgs
+
+config EPOLL
+	bool "epoll system call support"
+	default n
+	depends on SOCKET_SYSCALL
+	help
+	  Enable to use epoll on socket. Only processor components that have socket
+	  support should enable this config. Epoll for other file types are not 
+	  supported now.
+
+config DEBUG_EPOLL
+	bool "debugging epoll"
+	default n
+	depends on EPOLL
+	help
+	  Turn on to show epoll debugging msgs
+
+config DEBUG_POLL
+	bool "debugging poll"
+	default n
+	depends on POLL
+	help
+	  Turn on to show poll debugging msgs
+
+endif # INFINIBAND
+
+endmenu # Networking

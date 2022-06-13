@@ -1,0 +1,355 @@
+menu "Lego Processor Component Configurations"
+
+config COMP_PROCESSOR
+	bool "Configure Lego as processor component"
+	default n
+	select PROCESSOR_ENABLE_SPLIT_PMD_PTLOCK
+	select PROCESSOR_MEMMAP_MEMBLOCK_RESERVED
+	---help---
+	  Say Y if you are going to build a processor-component
+	  controller of Lego OS.
+
+if COMP_PROCESSOR
+
+config CHECKPOINT
+	bool "Enable Process Checkpoint"
+	default n
+	---help---
+	  Say Y if you want periodic checkpointing at processor component.
+	  This may slow down application throughput, but could greatly improve
+	  the reliability of your system.
+
+	  If unsure, say N.
+
+#
+# Heavily threaded applications may benefit from splitting the mm-wide
+# page_table_lock, so that faults on different parts of the user address
+# space can be handled with less contention: split it at this NR_CPUS.
+# Default to 4 for wider testing, though 8 might be more appropriate.
+# DEBUG_SPINLOCK and DEBUG_LOCK_ALLOC spinlock_t also enlarge struct page.
+#
+config PROCESSOR_SPLIT_PTLOCK_CPUS
+	int
+	default "4"
+
+#
+# Use per-pmd ptlock
+# This should only be selected by Processor Manager
+#
+config PROCESSOR_ENABLE_SPLIT_PMD_PTLOCK
+	bool
+
+config PROCESSOR_MEMMAP_MEMBLOCK_RESERVED
+	bool "Reseve memmap $ marked memory to memblock"
+	default y
+	help
+	  By default, memmap $ option reserves a range of physical memory.
+	  This reserved memory will be marked reserved in e820 table, which
+	  means this range will not be registered into memblock.
+
+	  Only memory that has been registered into memblock will be assigned
+	  `struct page' with it (both memblock.memory and memblock.reserver will have).
+	  Do note that this part of memory can be mapped as 1GB page (depends on boot time).
+
+	  In other words, by default (the linux semantic), users need to ioremap
+	  the memmap $ reserved physical memory, and use the returned kernel virtual address.
+	  Do note that the ioremap() currently in Lego only support 4KB mapping.
+
+	  If this option is enabled, the memory marked by memmap $ will NOT be marked
+	  reserved in e820 table, instead, it will be pushed into memblock, which means
+	  it is mapped into kernel direct mapping and has `struct page'.
+
+	  So, why we are having this?
+	  Because I think the direct 1GB mapping may have better performance.
+	  However, the real performance number is unknown.
+
+	  If unsure, say y.
+
+menu "Processor Side Replication Configuration"
+config REPLICATION_MEMORY
+	bool "Enable Replicating Memory"
+	default n
+	help
+	  If this option is enabled, every victim cache flush will also be
+	  sent over to a Replica Memory Node, or Secondary Memory Node.
+
+	  This option is independent of M side REPLICATION_VMA.
+
+	  If you want to be able to recover from memory component failure,
+	  you should have both enabled at P and M.
+
+	  If unsure, say N.
+endmenu
+
+source "managers/processor/pcache/Kconfig"
+source "managers/processor/fs/Kconfig"
+source "managers/processor/checkpoint/Kconfig"
+
+menu "Processor Side Syscall Trace Options"
+config STRACE
+	bool "syscall trace"
+	default n
+	depends on DEBUG_KERNEL
+	depends on COMP_PROCESSOR
+	help
+	  This enables kernel version syscall tracer.
+	  Each thread has its own set of counters to record number of
+	  syscalls happened during process lifetime.
+
+	  NOTE!!! The stat printed are accumulated from all threads
+	  within a group.
+
+config STRACE_PRINT_ON_ENTER
+	bool "print strace on syscall enter"
+	default n
+	depends on STRACE
+
+config STRACE_PRINT_ON_LEAVE
+	bool "print strace on syscall leave"
+	default n
+	depends on STRACE
+
+config STRACE_PRINT_ON_SPECIFIC
+	bool "print only specfic syscalls"
+	default n
+	depends on STRACE
+endmenu
+
+menu "Processor Side Global Monitor Configuration"
+config GPM
+	bool "Global processor monitor"
+	default n
+	help
+	  Enable this if you have a Global Processor Monitor machine
+	  running in the cluster.
+
+	  If unsure, say N
+
+if GPM
+config GPM_NODEID
+	int "GMM IB node ID"
+	default 3
+	help
+	  if running a multiple monitor on same machine, IB node
+	  ID can be same as Storage node, GMM, and GSM's
+
+config VNODE
+	bool "Virtual node"
+	default n
+	help
+	  Enable virtual node namespace
+
+config VNODE_TABLE_ORDER
+	int "Virtual node hash table order"
+	default 10
+	depends on VNODE
+	help
+	  Order of vnode hashable used for transfering IP to vnode_struct
+	  The number of hashtable entries will be (1<<ORDER).
+
+	  If unsure, use default.
+
+config VNODE_MAP_ORDER
+	int "Virtual node array order"
+	default 10
+	depends on VNODE
+	help
+	  Order of vnode array used for transfering vnode id to vnode_struct
+	  The number of the array will be (1<<ORDER)
+
+	  If unsure, use default.
+endif #if GPM
+endmenu
+
+menu "Processor Side DEBUG Options"
+config DEBUG_PCACHE
+	bool "Debug pcache"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	help
+	  This will enable PCACHE_BUG_ON macro etc. Enable this if you
+	  are developing pcache subsystem.
+
+	  If unsure, say N.
+
+config DEBUG_PCACHE_FILL
+	bool "Debug pcache fill"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	depends on DEBUG_PCACHE
+	help
+	  Enable to have a detailed dump log of pcache llc miss activities.
+	  It basically tells you what lines are fetched from remote. This
+	  option may produce *a lot* messages, hence by default it is
+	  ratelimited.
+
+	  If unsure, say N
+
+config DEBUG_PCACHE_FILL_UNLIMITED
+	bool "Debug pcache fill, print message un-ratelimited"
+	default n
+	depends on DEBUG_PCACHE_FILL
+	help
+	  Enable to have un-ratelimited pcache_debug in cache fill path.
+	  This indeed will produce a lot messages.
+
+	  If ununsure, say N please.
+
+config DEBUG_PCACHE_FLUSH
+	bool "Debug pcache flush"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	depends on DEBUG_PCACHE
+	help
+	  Enable to have a detailed dump log of pcache flush activities.
+	  It basically tells you what lines are flushed, and where they
+	  flushed to.
+
+	  If unsure, say N
+
+config DEBUG_PCACHE_VICTIM
+	bool "Debug victim cache"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	depends on DEBUG_PCACHE
+	depends on PCACHE_EVICTION_VICTIM
+	help
+	  Enable this option to have some runtime debug info about victim cache.
+	  If unsure, say N.
+
+config DEBUG_PCACHE_RMAP
+	bool "Debug rmap operations"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	depends on DEBUG_PCACHE
+	help
+	  Enable this option to trace pcache reverse mapping operations.
+	  If unsure say N.
+
+config DEBUG_PCACHE_ZEROFILL
+	bool "Debug zerofill"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	depends on PCACHE_ZEROFILL
+	help
+	  Enable this will tell you what PTEs have been set/cleared,
+	  in terms of the Zerofill bit.
+
+	  In unsure, say N.
+
+config DEBUG_FORK
+	bool "Debug processor-to-memory fork()"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	help
+	  Enable to debug fork syscall.
+
+	  If unsure, say N.
+
+config DEBUG_FILE
+	bool "Debug open/read/close calls"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	help
+	  Enable to debug file related calls
+
+config DEBUG_SYSCALL
+	bool "Debug all SYSCALL enter/exit"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	help
+	  Enable to have a detailed dump log of syscall entering and exit.
+	  Only used for testing purpose.
+
+	  If unsure, say N.
+
+config DEBUG_MMAP
+	bool "Debug mmap() and brk()"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	help
+	  Enable to debug mmap(), brk() at processor side.
+	  Mostly, it tells you what is returned.
+
+	  If unsure, say N.
+
+config DEBUG_MUNMAP
+	bool "Debug munmap()"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	help
+	  Enable to debug munmap()
+
+	  If unsure, say N.
+
+config DEBUG_MREMAP
+	bool "Debug mremap()"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	help
+	  Enable to debug mremap()
+
+	  If unsure, say N.
+
+config DEBUG_PROC_SYS
+	bool "Debug /proc and /sys output"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	help
+	  Some user-program will open /proc and /sys files to get information
+	  about lego-kernel. We are having these two interfaces to maintain
+	  compatability with linux.
+
+	  Enable to print the msg everytime /proc and /sys files are read
+	  by user program.
+
+	  If unsure, say N.
+
+config DEBUG_EMULATED_PGTABLE
+	bool "Debug emulated pgtable operations (may have tons of messages)"
+	default n
+	depends on COMP_PROCESSOR
+	depends on DEBUG_KERNEL
+	help
+	  Enable to trace the emulated pgtable release function, which is
+	  normally invoked by munmap() and mremap(), and combined with
+	  DEBUG_MREMAP, and DEBUG_MUNMAP.
+
+	  If unsure, say N.
+
+config DEBUG_CHECKPOINT
+	bool "Enable to show checkpoint debug messages"
+	default n
+	depends on DEBUG_KERNEL
+	---help---
+	  Say Y if you want to have more info about what is going on about checkpoint.
+
+	  If unsure, say N.
+
+config DEBUG_PIPE
+	bool "Debug pipe read/write/open/release"
+	default n
+	depends on DEBUG_KERNEL
+	---help---
+	  Say Y if you want to get some hint on what happens internally of a pipe
+
+	  If unsure, say N.
+
+endmenu # "Debug Option"
+
+endif	# if COMP_PROCESSOR
+
+endmenu # Processor component

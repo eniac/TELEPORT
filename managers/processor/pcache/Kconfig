@@ -1,0 +1,161 @@
+#
+# Pcache Kconfig Options
+#
+
+menu "Processor Side ExCache Configuration"
+
+config PCACHE_ZEROFILL
+	bool "pcache zerofill opt"
+	default y
+	depends on COMP_PROCESSOR
+	help
+         This option will optimize anonymous cache miss.
+         We save extra information in the PTE entry. If a cache line is
+         anonymous and is all-zero, we can do the following locally
+         - Allocate pcache, clear and return.
+
+         If unsure, say Y.
+
+config PCACHE_ZEROFILL_NOTIFY_MEMORY
+	bool "pcache zerofill notify memory"
+	default n
+	depends on COMP_PROCESSOR
+	depends on PCACHE_ZEROFILL
+	help
+	  In addition to PCACHE_ZEROFILL, enable this option will
+	  notify remote memory component about zerofill activities.
+	  
+	  Note!!! It is not necessary to notify remote memory.
+	  Because if the line is evicted, the flush handler will
+	  check if the mapping exist or not. If the mapping does
+	  not exist, the flush handler will establish one, and do
+	  the local copy.
+
+	  Thus we delay the physical memory allocation further than
+	  demand paging, it is delayed until pcache flush time.
+
+	  Besides, by doing zerofill on only _anonymous data_ pages,
+	  we will not affect code pages, which implies we will not
+	  impact the normal code execution flow.
+
+	  In all, avoiding the notification to memory is correct.
+
+	  If unsure, you should say N.
+
+#
+# Eviction Algorithm
+#
+choice
+	prompt "Pcache: Eviction Algorithm"
+	default PCACHE_EVICT_LRU
+	help
+	  Allows the selection of pcache eviction algorithm.
+	  Eviction happens when pcache allocation made into a full set.
+
+	config PCACHE_EVICT_RANDOM
+		bool "Random"
+		---help---
+		  Enable this option to use random algorithm while doing eviction.
+
+	config PCACHE_EVICT_FIFO
+		bool "FIFO"
+		---help---
+		  Enable this option to use FIFO algorithm while doing eviction.
+
+	config PCACHE_EVICT_LRU
+		bool "LRU"
+		---help---
+		  Enable this option to use LRU algorithm while doing eviction.
+		  It also enables PCACHE_EVICT_GENERIC_SWEEP, which will create
+		  background sweep threads.
+endchoice
+
+config PCACHE_EVICT_GENERIC_SWEEP
+	bool "Have a sweep thread to adjust LRU list"
+	default n
+	depends on PCACHE_EVICT_LRU
+	help
+	  Certain eviction algorithms (e.g., LRU) require sweep thread to adjust the list.
+	  However, sweep is not free. It will 1) occupy a cpu core, 2) content lock with
+	  regular running user threads, 3) pollute L1/L2 cpu cache.
+
+	  Thus, personally, I would sugguest you to disable this software-based adjustment.
+
+config PCACHE_EVICT_GENERIC_SWEEP_INTERVAL_MSEC
+	int "Pcache: sweep interval in msec"
+	depends on PCACHE_EVICT_GENERIC_SWEEP
+	range 10 5000
+	default 1000
+	help
+	  The interval between two sweep, in msec.
+
+#
+# Eviction Mechanism
+#
+choice
+	prompt "Pcache: Atomic Eviction Mechanism"
+	default PCACHE_EVICTION_PERSET_LIST
+	help
+	 Allows you to select pcache eviction mechasims.
+	 This happens after the line to evict is selected by evict algorithm.
+
+	 The eviction will need clflush, and clflush needs atomicity.
+	 That is why we need various mechanisms to ensure that the cache line
+	 is not changed by application during kernel flush (basically memcpy).
+
+	 Different eviction mechanism will impact pcache fill path.
+	 See details below.
+
+	config PCACHE_EVICTION_WRITE_PROTECT
+		bool "write-protect evicted line"
+		help
+		  Once a line is selected to be evicted, we 1) write-protect it,
+		  2) flush it back to memory, 3) unmap PTE.
+
+		  This is the most native way of doing atomic clflush. If needs
+		  two TLB shootdown to work. If any pgfault happen on the cores,
+		  they will wait until flush is finished.
+
+	config PCACHE_EVICTION_PERSET_LIST
+		bool "per-set eviction list"
+		help
+		  Say if want each pcache set to maintain a pending eviction list.
+		  Pcache fill path will check this list (or a bitmap) before going
+		  to fetch from memory. If pcache fill path find that the faulting
+		  address is in the list, it will *wait* until the line is flushed
+		  back to memory.
+
+		  This mechanism saves one TLB flush compared with WRPROTECT mechanism.
+		  But it introduces one checking in pcache fill path.
+
+	config PCACHE_EVICTION_VICTIM
+		bool "victim cache"
+		help
+		  Say Y if you want a small victim cache between pcache and memory.
+		  Victim cache is fully-associated, and it is loaded only when lines
+		  are evicted from pcache. In the case of a miss in pcache that hits
+		  in the victim cache, the contents can be copied to pcache directly,
+		  without any network delay.
+
+		  This mechanism saves one TLB flush compared with WRPROTECT mechanism.
+		  It also reduce the waiting of flush in the pcache fill critical path:
+		  pcache fill can just grab the content from the victim cache.
+
+		  The downside is it introduces one checking in pcache fill path.
+endchoice
+
+config PCACHE_EVICTION_VICTIM_NR_ENTRIES
+	int "Pcache: Number of Victim Cache Entries"
+	default 8
+	range 1 128
+	depends on PCACHE_EVICTION_VICTIM
+	help
+	  This value determines how many entries the victim cache will have.
+
+config PCACHE_PREFETCH
+	bool "Pcache: prefetch"
+	default y
+	help
+	  Say Y if you want prefetch feature.
+
+endmenu

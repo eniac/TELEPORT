@@ -1,0 +1,505 @@
+config 64BIT
+	bool "64-bit kernel" if ARCH = "x86"
+	default ARCH != "i386"
+	---help---
+	Say yes to build a 64-bit kernel - formerly known as x86_64
+	Say no to build a 32-bit kernel - formely known as i386
+
+config X86_32
+	def_bool y
+	depends on !64BIT
+
+config X86_64
+	def_bool y
+	depends on 64BIT
+
+### Arch Settings
+config X86
+	def_bool y
+	select HAVE_MEMBLOCK
+	select HAVE_MEMBLOCK_NODE_MAP
+	select X86_FEATURE_NAMES		if COMP_PROCESSOR
+	select HAVE_DMA_ATTRS
+	select HAVE_GENERIC_HARDIRQS
+
+config OUTPUT_FORMAT
+	string
+	default "elf32-i386" if X86_32
+	default "elf64-x86-64" if X86_64
+
+config ARCH_DEFCONFIG
+	string
+	default "arch/x86/configs/i386_defconfig" if X86_32
+	default "arch/x86/configs/x86_64_defconfig" if X86_64
+
+config IA32_EMULATION
+	bool "IA32 Emulation"
+	def_bool y if X86_64
+	depends on X86_64
+	---help---
+	  Include code to run legacy 32-bit programs under a
+	  64-bit kernel. You should likely turn this on, unless you're
+	  100% sure that you don't have any 32-bit programs left.
+
+	  Lego really really does NOT support legacy 32-bit things.
+	  We just put this config option to enable certain code.
+	  Probably later on we need to support this, just to save some pain.
+
+config X86_VSYSCALL_EMULATION
+       bool "Enable vsyscall emulation" if EXPERT
+       default y
+       depends on X86_64
+       ---help---
+	 This enables emulation of the legacy vsyscall page.  Disabling
+	 it is roughly equivalent to booting with vsyscall=none, except
+	 that it will also disable the helpful warning if a program
+	 tries to use a vsyscall.  With this option set to N, offending
+	 programs will just segfault, citing addresses of the form
+	 0xffffffffff600?00.
+
+	 This option is required by many programs built before 2013, and
+	 care should be used even with newer programs if set to N.
+
+	 Disabling this option saves about 7K of kernel size and
+	 possibly 4K of additional runtime pagetable memory.
+
+choice
+	prompt "vsyscall table for legacy applications"
+	depends on X86_64
+	default LEGACY_VSYSCALL_EMULATE
+	help
+	  Legacy user code that does not know how to find the vDSO expects
+	  to be able to issue three syscalls by calling fixed addresses in
+	  kernel space. Since this location is not randomized with ASLR,
+	  it can be used to assist security vulnerability exploitation.
+
+	  This setting can be changed at boot time via the kernel command
+	  line parameter vsyscall=[native|emulate|none].
+
+	  On a system with recent enough glibc (2.14 or newer) and no
+	  static binaries, you can say None without a performance penalty
+	  to improve security.
+
+	  If unsure, select "Emulate".
+
+	config LEGACY_VSYSCALL_NATIVE
+		bool "Native"
+		help
+		  Actual executable code is located in the fixed vsyscall
+		  address mapping, implementing time() efficiently. Since
+		  this makes the mapping executable, it can be used during
+		  security vulnerability exploitation (traditionally as
+		  ROP gadgets). This configuration is not recommended.
+
+	config LEGACY_VSYSCALL_EMULATE
+		bool "Emulate"
+		help
+		  The kernel traps and emulates calls into the fixed
+		  vsyscall address mapping. This makes the mapping
+		  non-executable, but it still contains known contents,
+		  which could be used in certain rare security vulnerability
+		  exploits. This configuration is recommended when userspace
+		  still uses the vsyscall area.
+
+	config LEGACY_VSYSCALL_NONE
+		bool "None"
+		help
+		  There will be no vsyscall mapping at all. This will
+		  eliminate any risk of ASLR bypass due to the vsyscall
+		  fixed address mapping. Attempts to use the vsyscalls
+		  will be reported to dmesg, so that either old or
+		  malicious userspace programs can be identified.
+
+endchoice
+
+config COMPAT
+	def_bool y
+	depends on IA32_EMULATION || X86_X32
+
+config ZONE_DMA32
+	def_bool y if X86_64
+
+config MMU
+	def_bool y
+
+config NEED_DMA_MAP_STATE
+	def_bool y
+	depends on X86_64
+
+config NEED_SG_DMA_LENGTH
+	def_bool y
+
+config HAVE_DMA_ATTRS
+	bool
+
+config PGTABLE_LEVELS
+	int
+	default 4 if X86_64
+	default 3 if X86_PAE
+	default 2
+
+config PHYSICAL_START
+	hex "Physical address where the kernel is loaded" if EXPERT
+	default "0x1000000"
+	---help---
+	  This gives the physical address where the kernel is loaded.
+	  Our kernel image will run from here. Note that this is the
+	  64-bit kernel. The 16-bit real-mode kernel is loaded under
+	  1MB limit.
+
+config PHYSICAL_ALIGN
+	hex "Alignment value to which kernel should be aligned" if EXPERT
+	default "0x200000"
+	range 0x2000 0x1000000 if X86_32
+	range 0x200000 0x1000000 if X86_64
+	---help---
+	  This value puts the alignment restrictions on physical address
+	  where kernel is loaded and run from. Kernel is compiled for an
+	  address which meets above alignment restriction.
+
+	  On 32-bit this value must be a multiple of 0x2000. On 64-bit
+	  this value must be a multiple of 0x200000.
+
+	  Don't change this unless you know what you are doing.
+
+config TRAMPOLINE_START
+	hex "Physical address where the trampoline code is copied" if EXPERT
+	default "0x90000"
+	---help---
+	  This gives the physical address where the realmode trampoline code
+	  is loaded. The trampoline code will run from here. Note that this
+	  is the realmode code, used to boot secondary cores.
+
+config ILLEGAL_POINTER_VALUE
+       hex
+       default 0 if X86_32
+       default 0xdead000000000000 if X86_64
+
+config X86_DEBUG_FPU
+	bool "Debug the x86 FPU code"
+	depends on DEBUG_KERNEL
+	default y
+	---help---
+	  If this option is enabled then there will be extra sanity
+	  checks and (boot time) debug printouts added to the kernel.
+	  This debugging adds some small amount of runtime overhead
+	  to the kernel.
+
+	  If unsure, say N.
+
+config X86_DEBUG_TRAP
+	bool "Debug the x86 specific traps"
+	depends on DEBUG_KERNEL
+	default n
+	help
+	  If this option is enabled, then every intel predefined traps
+	  and exceptions (except pgfault) will print a message whenever
+	  triggered, no matter it is taken care by fixup or not.
+
+	  If unsure, say N.
+
+config X86_DEBUG_FIXUP_EXCEPTION
+	bool "Debug fixup and exception handling"
+	default n
+	depends on DEBUG_KERNEL
+	help
+	  Enable to trace every fixup_exception() activity.
+	  Code that will generate exceptions are well controlled.
+	  For example, get_user, rdmsr_unsafe etc.
+	  This option is useful if you are adding any fixup/exception code.
+
+	  If unsure, say N.
+
+config X86_DEBUG_SMP_IPI
+	bool "Debug all SMP IPI Handlers"
+	default n
+	depends on DEBUG_KERNEL
+	help
+	  Enable to print some message in *all* IPI handler.
+	  This will print a lot messages, use with caution.
+	  Only used during development of IPI handlers.
+
+	  If unsure, say N.
+
+config X86_DEBUG_VSYSCALL
+	bool "Debug and trace vsyscall usage"
+	default n
+	depends on DEBUG_KERNEL
+	depends on X86_VSYSCALL_EMULATION
+	help
+	  Enable if you want to trace all vsyscalls. This will print
+	  a message every time a vsyscall is invoked.
+
+	  If unsure, say N.
+
+source "init/Kconfig"
+
+menu "Processor type and features"
+
+config ZONE_DMA
+	bool "DMA memory allocation support" if EXPERT
+	default y
+	help
+	  DMA memory allocation support allows devices with less than 32-bit
+	  addressing to allocate within the first 16MB of address space.
+	  Disable if no such devices will be used.
+
+	  If unsure, say Y.
+
+config SMP
+	bool "Symmetric multi-processing support"
+	default y
+	---help---
+	  This enables support for systems with more than one CPU. If you have
+	  a system with only one CPU, say N. If you have a system with more
+	  than one CPU, say Y.
+
+	  If you say N here, the kernel will run on uni- and multiprocessor
+	  machines, but will use only one CPU of a multiprocessor machine. If
+	  you say Y here, the kernel will run on many, but not all,
+	  uniprocessor machines. On a uniprocessor machine, the kernel
+	  will run faster if you say N here.
+
+	  See also <file:Documentation/x86/i386/IO-APIC.txt>,
+	  <file:Documentation/nmi_watchdog.txt> and the SMP-HOWTO available at
+	  <http://www.tldp.org/docs.html#howto>.
+
+	  If you don't know what to do here, say N.
+
+config X86_FEATURE_NAMES
+	bool "Processor feature human-readable names"
+	default y
+	---help---
+	  This option compiles in a table of x86 feature bits and corresponding
+	  names.  This is required to support /proc/cpuinfo and a few kernel
+	  messages.  You can disable this to save space, at the expense of
+	  making those few kernel messages show numeric feature bits instead.
+
+	  If in doubt, say Y.
+
+config MAXSMP
+	bool "Enable Maximum number of SMP Processors and NUMA Nodes"
+	default n
+	depends on X86_64 && SMP
+	---help---
+	  Enable maximum number of CPUS and NUMA Nodes for this architecture.
+	  If unsure, say N.
+
+config NR_CPUS
+	int "Maximum number of CPUs" if SMP && !MAXSMP
+	default "1" if !SMP
+	default "8192" if MAXSMP
+	default "64" if SMP
+	---help---
+	  This allows you to specify the maximum number of CPUs which this
+	  kernel will support.
+
+	  This is purely to save memory - each supported CPU adds
+	  approximately eight kilobytes to the kernel image.
+
+config X86_LOCAL_APIC
+	def_bool y
+	depends on X86_64 || SMP || PCI_MSI
+	select IRQ_DOMAIN_HIERARCHY
+	select PCI_MSI_IRQ_DOMAIN if PCI_MSI
+
+config X86_IO_APIC
+	def_bool y
+	depends on X86_LOCAL_APIC
+
+config X86_X2APIC
+	bool "Support x2apic"
+	default y
+	depends on X86_LOCAL_APIC && X86_64
+	---help---
+	  This enables x2apic support on CPUs that have this feature.
+
+	  This allows 32-bit apic IDs (so it can support very large systems),
+	  and accesses the local apic via MSRs not via mmio.
+
+	  If you don't know what to do here, say N.
+
+config X86_MPPARSE
+	bool "Enable MPS table" if ACPI || SFI
+	default y
+	depends on X86_LOCAL_APIC
+	---help---
+	  For old smp systems that do not have proper acpi support. Newer systems
+	  (esp with 64bit cpus) with acpi support, MADT and DSDT will override it
+
+config X86_DIRECT_GBPAGES
+	def_bool y
+	depends on X86_64
+	---help---
+	  Certain kernel features effectively disable kernel
+	  linear 1 GB mappings (even if the CPU otherwise
+	  supports them), so don't confuse the user by printing
+	  that we have them enabled.
+
+# Common NUMA Features
+config NUMA
+	bool "Numa Memory Allocation and Scheduler Support"
+	depends on SMP
+	depends on X86_64
+	default y if SMP
+	---help---
+	  Enable NUMA (Non Uniform Memory Access) support.
+
+	  The kernel will try to allocate memory used by a CPU on the
+	  local memory controller of the CPU and add some more
+	  NUMA awareness to the kernel.
+
+	  For 64-bit this is recommended if the system is Intel Core i7
+	  (or later), AMD Opteron, or EM64T NUMA.
+
+	  Otherwise, you should say N.
+
+config NUMA_USE_ONE_SOCKET
+	bool "Only use the first socket even more than one sockets present"
+	def_bool y
+	depends on NUMA
+	---help---
+	If this option is on, Lego will use only boot one socket and register
+	the memory from that socket, even if there are more than one sockets
+	present in the system.
+
+	This should be used by Processor Component. We don't want some sockets
+	affinity to affect runtime performance. Besides, the pcache memory is
+	all co-located in one socket (assume the memmap is given to the right
+	place....)
+
+	If unsure, say N.
+
+config NODES_SHIFT
+	int "Maximum NUMA Nodes (as a power of 2)" if !MAXSMP
+	range 1 10
+	default "10" if MAXSMP
+	default "6" if X86_64
+	default "3"
+	depends on NUMA
+	---help---
+	  Specify the maximum number of NUMA Nodes available on the target
+	  system.  Increases memory reserved to accommodate various tables.
+
+config ARCH_FLATMEM_ENABLE
+	def_bool y
+	depends on X86_32 && !NUMA
+
+config ARCH_DISCONTIGMEM_ENABLE
+	def_bool y
+	depends on X86_32 && NUMA
+
+config ARCH_DISCONTIGMEM_DEFAULT
+	def_bool y
+	depends on X86_32 && NUMA
+
+config ARCH_SPARSEMEM_ENABLE
+	def_bool y
+	depends on X86_64 || NUMA || X86_32
+	select SPARSEMEM_VMEMMAP_ENABLE if X86_64
+
+config ARCH_SPARSEMEM_DEFAULT
+	def_bool y
+	depends on X86_64
+
+config ARCH_SELECT_MEMORY_MODEL
+	def_bool y
+	depends on ARCH_SPARSEMEM_ENABLE
+
+config HPET_TIMER
+	def_bool X86_64
+	prompt "HPET Timer Support" if X86_32
+	---help---
+	  Use the IA-PC HPET (High Precision Event Timer) to manage
+	  time in preference to the PIT and RTC, if a HPET is
+	  present.
+	  HPET is the next generation timer replacing legacy 8254s.
+	  The HPET provides a stable time base on SMP
+	  systems, unlike the TSC, but it is more expensive to access,
+	  as it is off-chip.  The interface used is documented
+	  in the HPET spec, revision 1.
+
+	  You can safely choose Y here.  However, HPET will only be
+	  activated if the platform and the BIOS support this feature.
+	  Otherwise the 8254 will be used for timing services.
+
+	  Choose N to continue using the legacy 8254 timer.
+
+menu "Bus options (PCI etc.)"
+
+config PCI
+	bool "PCI support"
+	default y
+
+choice
+	prompt "PCI access mode"
+	depends on X86_32 && PCI
+	default PCI_GOANY
+	---help---
+	  On PCI systems, the BIOS can be used to detect the PCI devices and
+	  determine their configuration. However, some old PCI motherboards
+	  have BIOS bugs and may crash if this is done. Also, some embedded
+	  PCI-based systems don't have any BIOS at all. Linux can also try to
+	  detect the PCI hardware directly without using the BIOS.
+
+	  With this option, you can specify how Linux should detect the
+	  PCI devices. If you choose "BIOS", the BIOS will be used,
+	  if you choose "Direct", the BIOS won't be used, and if you
+	  choose "MMConfig", then PCI Express MMCONFIG will be used.
+	  If you choose "Any", the kernel will try MMCONFIG, then the
+	  direct access method and falls back to the BIOS if that doesn't
+	  work. If unsure, go with the default, which is "Any".
+
+config PCI_GOBIOS
+	bool "BIOS"
+
+config PCI_GOMMCONFIG
+	bool "MMConfig"
+
+config PCI_GODIRECT
+	bool "Direct"
+
+config PCI_GOOLPC
+	bool "OLPC XO-1"
+	depends on OLPC
+
+config PCI_GOANY
+	bool "Any"
+
+endchoice
+
+config PCI_BIOS
+	def_bool y
+	depends on X86_32 && PCI && (PCI_GOBIOS || PCI_GOANY)
+
+# x86-64 doesn't support PCI BIOS access from long mode so always go direct.
+config PCI_DIRECT
+	def_bool y
+	depends on PCI && (X86_64 || (PCI_GODIRECT || PCI_GOANY || PCI_GOOLPC || PCI_GOMMCONFIG))
+
+config PCI_OLPC
+	def_bool y
+	depends on PCI && OLPC && (PCI_GOOLPC || PCI_GOANY)
+
+config PCI_MSI
+	def_bool y
+
+config PCI_DOMAINS
+	def_bool y
+	depends on PCI
+
+# Lego must have PCI ACPI, so def_bool y
+config PCI_MMCONFIG
+	bool "Support mmconfig PCI config space access"
+	def_bool y
+	depends on X86_64 && PCI
+
+endmenu # Bus options
+
+endmenu
+
+source "kernel/Kconfig.hz"
+source "kernel/Kconfig.preempt"
+source "mm/Kconfig"
+source "drivers/Kconfig"
+source "managers/Kconfig"

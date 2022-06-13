@@ -1,0 +1,5 @@
+#ifndef _ASM_X86_UNISTD_64_X32_H
+#define _ASM_X86_UNISTD_64_X32_H 1
+
+
+#endif /* _ASM_X86_UNISTD_64_X32_H */

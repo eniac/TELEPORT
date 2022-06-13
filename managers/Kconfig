@@ -1,0 +1,290 @@
+#
+# Makefile for Lego components selections
+#
+
+source "managers/processor/Kconfig"
+source "managers/memory/Kconfig"
+
+menu "DRAM Cache Options"
+config PCACHE_LINE_SIZE_SHIFT
+	int
+	default 12
+	---help---
+	This option configures the cache line size.
+	By default, we use 4KB cache line.
+
+config PCACHE_ASSOCIATIVITY_SHIFT
+	int "Pcache Associativity Order"
+	range 1 32
+	default 6
+	---help---
+	  Configure the LLC cache associativity shift for processor components.
+	  Default is 3, which means the default associativity is 2^3=8.
+endmenu
+
+menu "General Manager Config/Debug Options"
+config SOFT_WATCHDOG
+	bool "Software watchdog"
+	default n
+	depends on DEBUG_KERNEL
+	depends on COMP_MEMORY || COMP_PROCESSOR
+	help
+	  Create a daemon thread, which print current
+	  system status periodically. Used to debug.
+
+	  If unsure, say N.
+
+config SOFT_WATCHDOG_INTERVAL_SEC
+	int "Periodic print interval in sec"
+	range 1 60
+	default 5 if COMP_MEMORY
+	default 10 if COMP_PROCESSOR
+	depends on SOFT_WATCHDOG
+
+config DEFAULT_MEM_NODE
+	int "Default memory homenode ID"
+	depends on COMP_PROCESSOR || COMP_MEMORY
+
+config DEFAULT_STORAGE_NODE
+	int "Default storage node ID"
+	depends on COMP_PROCESSOR || COMP_MEMORY
+
+config USE_RAMFS
+	bool "Use RAMFS in P or M"
+	default y
+	depends on COMP_PROCESSOR || COMP_MEMORY
+	help
+	  Enable to use RAMFS in memory or processor component. Debug only.
+
+	  If unsure, say N.
+
+config RAMFS_OBJECT_FILE
+	string "The static-linked image embedded into Lego"
+	default "usr/general.o"
+	depends on COMP_MEMORY && USE_RAMFS
+	help
+	  Please give the full pathname of the staticlly-linked EFL image.
+
+config GSM
+	bool "Contact GSM for locating page_cache/storage homenode"
+	default n
+	help
+	  Contact GSM for locating page_cache/storage homenode
+
+if GSM
+config GSM_HOMENODE
+	int "GSM homenode ID"
+	depends on FIT_LOCAL_ID || FIT_NR_NODES
+endif #if GSM
+
+endmenu # General Manager Config/Debug
+
+menu "Lego Kernel Counters"
+
+config COUNTER
+	bool "Kernel Counters"
+	default n
+	help
+	  Say Y if you want to have record various events happen in the system.
+	  Enable this will add overhead to your system.
+	  If unsure, say N.
+
+config COUNTER_FIT_IB
+	bool "Counter: FIT InfiniBand (P and M)"
+	default n
+	depends on COUNTER
+	help
+	  Say Y if you want to track ibapi_send_reply, tx, and rx bytes.
+
+	  If unsure, say N.
+
+config COUNTER_PCACHE
+	bool "Counter: ExCache Events (P)"
+	default n
+	depends on COUNTER
+	depends on COMP_PROCESSOR
+	help
+	  Say Y if you want to track ExCache events on Processor.
+
+	  If unsure, say N.
+
+config COUNTER_MEMORY_HANDLER
+	bool "Counter: memory manager handler (M)"
+	default n
+	depends on COUNTER
+	depends on COMP_MEMORY
+	help
+	  Say Y if you want to track memory manager handler activities.
+
+	  If unsure, say N.
+
+config COUNTER_THPOOL
+	bool "Counter: memory thread pool (M)"
+	default n
+	depends on COUNTER
+	depends on COMP_MEMORY
+	help
+	  Say Y if you want to have some thpool internal bookkeeping.
+
+	  If unsure, say N.
+
+endmenu #Lego Kernel Counters
+
+menu "Lego Kernel Profiling"
+config PROFILING
+	bool "Kernel Profiling"
+	default n
+	help
+	  Say Y enable kernel profiling facility.
+	  You need to enable each sub-configurations manually.
+	  All of them are independent of each other.
+
+	  If unsure, say N.
+
+config PROFILING_KERNEL_HEATMAP
+	bool "Profile kernel text, generate heatmap"
+	default n
+	depends on PROFILING
+	help
+	  Say Y if you want to roughly profile kernel text.
+	  The mechanism is simple: trace current IP when timer
+	  interrupt happens.
+
+	  Lego current support the CPU_PROFILING mode.
+	  This will affect system runtime performance. Use with caution.
+
+	  If unsure, say N.
+
+config PROFILING_POINTS
+	bool "Profile specific functions/points"
+	default n
+	depends on PROFILING
+	help
+	  Say Y if you want to profile some specific functions.
+
+	  If unsure, say N.
+
+config PROFILING_BOOT
+	bool "Boot Time Profiling"
+	default n
+	depends on PROFILING
+	help
+	  Enable this if you want to have a predefined boot-time profiling.
+	  It gives you a basic sense how some kernel functions perfom on
+	  your hardware platform.
+
+	  It is a one-time profiling process, thus won't hurt runtime performance.
+
+	  If unsure, say N.
+
+config PROFILING_BOOT_RPC
+	bool "Profile RPC at boot time"
+	default n
+	depends on PROFILING
+	depends on COMP_PROCESSOR
+	help
+	  Enable this if you want to have a predefined boot-time profiling.
+	  This will profile the RPC between processor and memory,
+	  prossor and storage.
+
+	  If unsure, say N.
+
+endmenu #Lego Kernel Profiling
+
+#
+# Co-locate with net info to ease .config modification
+#
+source "net/Kconfig"
+
+# 
+# VMA relevant config, put here because it relates to both 
+# processor side and memory side
+#
+menu "vma relevant configuration, debug, and test"
+
+config DISTRIBUTED_VMA
+	bool "Config Lego distributed vma"
+	default n
+	help
+	  Enable Lego distributed vma, affect both processor side and memory side
+
+if DISTRIBUTED_VMA 
+
+config DISTRIBUTED_VMA_PROCESSOR
+	bool "distributed vma, processor side"
+	default y
+	depends on COMP_PROCESSOR
+	help
+	  Enable processor side distributed vma
+
+config DISTRIBUTED_VMA_MEMORY
+	bool "distributed vma, memory side"
+	default y
+	depends on COMP_MEMORY
+	help
+	  Enable memory side distributed vma
+
+config VM_GRANULARITY_ORDER
+	int "Default granularity is 1G"
+	default 30
+	help
+	  Static virtual memory range granularity (in byte, default is 2^30)
+
+config MEM_NR_NODES
+	int "how many nodes are memory nodes"
+	default 1
+	help
+	  this config helps determine the size of reply of vma request 
+
+config VMA_CACHE_AWARENESS
+	bool "whether distributed vma being aware of cache"
+	default y
+	depends on COMP_MEMORY
+	help
+	  this config helps reducing cache conflicts
+
+config DEBUG_VMA
+	bool "Debug vma"
+	default n
+	depends on DEBUG_KERNEL
+	help
+	  Enable VMA debug
+
+config DEBUG_VMA_TRACE
+	bool "print vma relevant function call trace"
+	default y
+	depends on DEBUG_VMA
+	help
+	  Enable vma function call trace
+
+config VMA_PROCESSOR_UNITTEST
+	bool "Run VMA processor side unit test"
+	default n
+	depends on COMP_PROCESSOR && DEBUG_VMA
+	help
+	  Enable vma unit test
+
+config VMA_MEMORY_UNITTEST
+	bool "Run VMA memory side unit test"
+	default n
+	depends on COMP_MEMORY && DEBUG_VMA
+	help
+	  Enable vma unit test
+	
+endif	# if DISTRIBUTED_VMA
+
+config MEM_PAGE_CACHE
+	bool "P/M supports pgcache"
+	default n
+	help
+	  Either enable this M to support page cache.
+	  Or, make this P know remote M supports page cache.
+
+	  The P semantic should not be included here. It is semantically
+	  not a correct combination.
+
+	  A more flexible solution: P's process should check if some
+	  requests (e.g. rename) should be sent over to M, instead of S.
+
+	  If unsure, say N.
+endmenu

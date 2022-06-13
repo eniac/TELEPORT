@@ -1,0 +1,203 @@
+menu "Memory Management"
+
+config SELECT_MEMORY_MODEL
+	def_bool y
+	depends on ARCH_SELECT_MEMORY_MODEL
+
+choice
+	prompt "Memory model"
+	depends on SELECT_MEMORY_MODEL
+	default DISCONTIGMEM_MANUAL if ARCH_DISCONTIGMEM_DEFAULT
+	default SPARSEMEM_MANUAL if ARCH_SPARSEMEM_DEFAULT
+	default FLATMEM_MANUAL
+
+
+config FLATMEM_MANUAL
+	bool "Flat Memory"
+	depends on !ARCH_DISCONTIGMEM_ENABLE || ARCH_FLATMEM_ENABLE
+	help
+	  This option allows you to change some of the ways that
+	  LegoOS manages its memory internally.  Most users will
+	  only have one option here: FLATMEM.  This is normal
+	  and a correct option.
+
+	  Some users of more advanced features like NUMA and
+	  memory hotplug may have different options here.
+	  DISCONTIGMEM is a more mature, better tested system,
+	  but is incompatible with memory hotplug and may suffer
+	  decreased performance over SPARSEMEM.
+
+	  If unsure, choose this option (Flat Memory) over any other.
+
+config DISCONTIGMEM_MANUAL
+	bool "Discontiguous Memory"
+	depends on ARCH_DISCONTIGMEM_ENABLE
+	help
+	  This option provides enhanced support for discontiguous
+	  memory systems, over FLATMEM.  These systems have holes
+	  in their physical address spaces, and this option provides
+	  more efficient handling of these holes.  However, the vast
+	  majority of hardware has quite flat address spaces, and
+	  can have degraded performance from the extra overhead that
+	  this option imposes.
+
+	  Many NUMA configurations will have this as the only option.
+
+	  If unsure, choose "Flat Memory" over this option.
+
+config SPARSEMEM_MANUAL
+	bool "Sparse Memory"
+	depends on ARCH_SPARSEMEM_ENABLE
+	help
+	  This will be the only option for some systems, including
+	  memory hotplug systems.  This is normal.
+
+	  For many other systems, this will be an alternative to
+	  "Discontiguous Memory".  This option provides some potential
+	  performance benefits, along with decreased code complexity,
+	  but it is newer, and more experimental.
+
+	  If unsure, choose "Discontiguous Memory" or "Flat Memory"
+	  over this option.
+
+endchoice
+
+config DISCONTIGMEM
+	def_bool y
+	depends on (!SELECT_MEMORY_MODEL && ARCH_DISCONTIGMEM_ENABLE) || DISCONTIGMEM_MANUAL
+
+config SPARSEMEM
+	def_bool y
+	depends on (!SELECT_MEMORY_MODEL && ARCH_SPARSEMEM_ENABLE) || SPARSEMEM_MANUAL
+
+config FLATMEM
+	def_bool y
+	depends on (!DISCONTIGMEM && !SPARSEMEM) || FLATMEM_MANUAL
+
+config FLAT_NODE_MEM_MAP
+	def_bool y
+	depends on !SPARSEMEM
+
+#
+# Both the NUMA code and DISCONTIGMEM use arrays of pg_data_t's
+# to represent different areas of memory.  This variable allows
+# those dependencies to exist individually.
+#
+config NEED_MULTIPLE_NODES
+	def_bool y
+	depends on DISCONTIGMEM || NUMA
+
+config HAVE_MEMBLOCK
+	bool
+
+config HAVE_MEMBLOCK_NODE_MAP
+	bool
+
+#
+# SPARSEMEM_EXTREME (which is the default) does some bootmem
+# allocations when memory_present() is called.  If this cannot
+# be done on your architecture, select this option.  However,
+# statically allocating the mem_section[] array can potentially
+# consume vast quantities of .bss, so be careful.
+#
+# This option will also potentially produce smaller runtime code
+# with gcc 3.4 and later.
+#
+config SPARSEMEM_STATIC
+	bool
+
+#
+# Architecture platforms which require a two level mem_section in SPARSEMEM
+# must select this option. This is usually for architecture platforms with
+# an extremely sparse physical address space.
+#
+config SPARSEMEM_EXTREME
+	def_bool y
+	depends on SPARSEMEM && !SPARSEMEM_STATIC
+
+config SPARSEMEM_VMEMMAP_ENABLE
+	bool
+
+config SPARSEMEM_ALLOC_MEM_MAP_TOGETHER
+	def_bool y
+	depends on SPARSEMEM && X86_64
+
+config SPARSEMEM_VMEMMAP
+	bool "Sparse Memory virtual memmap"
+	depends on SPARSEMEM && SPARSEMEM_VMEMMAP_ENABLE
+	default y
+	help
+	 SPARSEMEM_VMEMMAP uses a virtually mapped memmap to optimise
+	 pfn_to_page and page_to_pfn operations.  This is the most
+	 efficient option when sufficient kernel resources are available.
+
+choice
+	prompt "Choose kmalloc allocator"
+	default SLOB
+	help
+	   This option allows to select a slab allocator.
+
+config SLAB
+	bool "SLAB"
+	select HAVE_HARDENED_USERCOPY_ALLOCATOR
+	help
+	  The regular slab allocator that is established and known to work
+	  well in all environments. It organizes cache hot objects in
+	  per cpu and per node queues.
+
+config SLUB
+	bool "SLUB (Unqueued Allocator)"
+	select HAVE_HARDENED_USERCOPY_ALLOCATOR
+	help
+	   SLUB is a slab allocator that minimizes cache line usage
+	   instead of managing queues of cached objects (SLAB approach).
+	   Per cpu caching is realized using slabs of objects instead
+	   of queues of objects. SLUB can use memory efficiently
+	   and has enhanced diagnostics. SLUB is the default choice for
+	   a slab allocator.
+
+config SLOB
+	bool "SLOB (Simple Allocator)"
+	help
+	   SLOB replaces the stock allocator with a drastically simpler
+	   allocator. SLOB is generally more space efficient but
+	   does not perform as well on large systems.
+
+endchoice # "Kmalloc Allocator"
+
+#
+# MM Debug Options
+#
+
+config DEBUG_MM_ALLOCATION
+	bool "Debug kmalloc and buddy allocator"
+	depends on DEBUG_KERNEL
+	default n
+
+config DEBUG_KMALLOC_USE_BUDDY
+	bool "Make kmalloc use buddy directly, kfree is empty"
+	depends on DEBUG_KERNEL
+	depends on DEBUG_MM_ALLOCATION
+	default n
+	help
+	  Make kmalloc() use buddy allocator directly, without going through
+	  slob/slab/slub. This option can be used to catch bugs introduced by kmalloc.
+
+	  If unsure, say N.
+
+config DEBUG_BUDDY_FORCE_GFP_ZERO
+	bool "Pass __GFP_ZERO to every physical page allocation (Catch uninitliazed bug)"
+	depends on DEBUG_KERNEL
+	depends on DEBUG_MM_ALLOCATION
+	default n
+	help
+	  This option is used to catch uninitliazed bug. If this option is on,
+	  then all pages allocated by buddy allocator will be cleared upon return.
+
+	  If anything went wrong without this option AND went alright with this option,
+	  that means you have uninitialized buffer.
+
+	  If unsure, say N.
+
+
+endmenu

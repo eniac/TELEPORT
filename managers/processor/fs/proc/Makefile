@@ -1,0 +1,9 @@
+obj-y += core.o
+obj-y += proc_stat.o
+obj-y += proc_meminfo.o
+obj-y += proc_cpuinfo.o
+obj-y += proc_cmdline.o
+obj-y += proc_processes.o
+obj-y += proc_version.o
+obj-y += proc_sys_vm_overcommit.o
+obj-y += self/
